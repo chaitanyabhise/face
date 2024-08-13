@@ -3,6 +3,7 @@ import numpy as np
 from flask import Flask, request, jsonify
 import base64
 import os
+import mysql.connector
 
 app = Flask(__name__)
 
@@ -40,6 +41,29 @@ def match():
     captured_image_base64 = request.json.get('captured_image')
 
     if not stored_image_path or not captured_image_base64:
+        return jsonify({'match': False, 'error': 'Invalid input'}), 400
+
+    captured_image = decode_base64_image(captured_image_base64)
+
+    if match_faces(stored_image_path, captured_image):
+        return jsonify({'match': True})
+    else:
+        return jsonify({'match': False})
+
+def connect_to_database():
+    """Connect to the remote database."""
+    db_config = {
+        'host': os.getenv('DB_HOST', 'localhost'),
+        'user': os.getenv('DB_USER', 'root'),
+        'password': os.getenv('DB_PASS', ''),
+        'database': os.getenv('DB_NAME', '')
+    }
+    return mysql.connector.connect(**db_config)
+
+if __name__ == '__main__':
+    port = os.getenv('PORT', 5000)
+    app.run(host='0.0.0.0', port=port)
+
         return jsonify({'match': False, 'error': 'Invalid input'}), 400
 
     captured_image = decode_base64_image(captured_image_base64)
