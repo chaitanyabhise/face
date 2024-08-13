@@ -1,65 +1,54 @@
-from flask import Flask, request, jsonify
 import cv2
 import numpy as np
+from flask import Flask, request, jsonify
 import base64
-import pymysql
+import os
 
 app = Flask(__name__)
 
-def connect_db():
-    return pymysql.connect(host='localhost',
-                           user='u475049814_kiitattendence',
-                           password='CKTMcb@12',
-                           db='u475049814_kiitattendence')
+def decode_base64_image(base64_string):
+    """Decode a base64 image string to a numpy array."""
+    img_data = base64.b64decode(base64_string)
+    np_arr = np.frombuffer(img_data, np.uint8)
+    img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+    return img
 
-@app.route('/match-face', methods=['POST'])
-def match_face():
-    data = request.get_json()
-    student_id = data['student_id']
-    captured_image_data = base64.b64decode(data['captured_image'])
-
-    # Convert base64 string to numpy array
-    nparr = np.frombuffer(captured_image_data, np.uint8)
-    captured_image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-
-    # Retrieve stored image from database
-    conn = connect_db()
-    cursor = conn.cursor()
-    cursor.execute("SELECT face_image_path FROM registered_students WHERE id = %s", (student_id,))
-    row = cursor.fetchone()
-    stored_image_path = row[0]
+def match_faces(stored_image_path, captured_image):
+    """Compare the stored face image with the newly captured face image."""
     stored_image = cv2.imread(stored_image_path)
+    
+    if stored_image is None:
+        return False
+    
+    orb = cv2.ORB_create()
 
-    # Perform face matching using OpenCV
-    match_result = perform_face_matching(stored_image, captured_image)
+    kp1, des1 = orb.detectAndCompute(stored_image, None)
+    kp2, des2 = orb.detectAndCompute(captured_image, None)
 
-    return jsonify({'match': match_result})
+    bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
+    matches = bf.match(des1, des2)
 
-def perform_face_matching(stored_image, captured_image):
-    # Implement face matching logic using OpenCV
-    gray_stored = cv2.cvtColor(stored_image, cv2.COLOR_BGR2GRAY)
-    gray_captured = cv2.cvtColor(captured_image, cv2.COLOR_BGR2GRAY)
+    matches = sorted(matches, key=lambda x: x.distance)
 
-    # Initialize the face detector
-    face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+    match_ratio = len(matches) / min(len(des1), len(des2))
 
-    # Detect faces in the stored image
-    faces_stored = face_cascade.detectMultiScale(gray_stored, 1.1, 4)
-    faces_captured = face_cascade.detectMultiScale(gray_captured, 1.1, 4)
+    return match_ratio > 0.4  # Adjust threshold as needed
 
-    # Assume single face per image
-    if len(faces_stored) == 1 and len(faces_captured) == 1:
-        (x1, y1, w1, h1) = faces_stored[0]
-        (x2, y2, w2, h2) = faces_captured[0]
+@app.route('/match', methods=['POST'])
+def match():
+    stored_image_path = request.json.get('stored_image_path')
+    captured_image_base64 = request.json.get('captured_image')
 
-        roi_stored = gray_stored[y1:y1+h1, x1:x1+w1]
-        roi_captured = gray_captured[y2:y2+h2, x2:x2+w2]
+    if not stored_image_path or not captured_image_base64:
+        return jsonify({'match': False, 'error': 'Invalid input'}), 400
 
-        # Use Histogram of Oriented Gradients (HOG) or another feature comparison method
-        if np.array_equal(roi_stored, roi_captured):
-            return True
+    captured_image = decode_base64_image(captured_image_base64)
 
-    return False
+    if match_faces(stored_image_path, captured_image):
+        return jsonify({'match': True})
+    else:
+        return jsonify({'match': False})
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+    port = os.getenv('PORT', 5000)
+    app.run(host='0.0.0.0', port=port)
