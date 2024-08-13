@@ -64,15 +64,3 @@ if __name__ == '__main__':
     port = os.getenv('PORT', 5000)
     app.run(host='0.0.0.0', port=port)
 
-        return jsonify({'match': False, 'error': 'Invalid input'}), 400
-
-    captured_image = decode_base64_image(captured_image_base64)
-
-    if match_faces(stored_image_path, captured_image):
-        return jsonify({'match': True})
-    else:
-        return jsonify({'match': False})
-
-if __name__ == '__main__':
-    port = os.getenv('PORT', 5000)
-    app.run(host='0.0.0.0', port=port)
